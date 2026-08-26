@@ -40,7 +40,7 @@ doctask did to establish them.
 ```bash
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 cp .env.example .env   # then edit .env with your real SUPERDOCS_API_KEY
-export $(cat .env | xargs)
+set -a && source .env && set +a
 .venv/bin/python methods_drafter.py --register example_register.json --out methods_qpcr
 ```
 

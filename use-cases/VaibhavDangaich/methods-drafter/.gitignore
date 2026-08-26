@@ -2,3 +2,6 @@
 .methods_drafter_state.json
 __pycache__/
 *.pyc
+/*.docx
+/*.md
+!README.md
