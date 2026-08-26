@@ -1,0 +1,4 @@
+.env
+.methods_drafter_state.json
+__pycache__/
+*.pyc
