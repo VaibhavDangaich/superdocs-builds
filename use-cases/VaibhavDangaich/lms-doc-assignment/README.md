@@ -70,6 +70,7 @@ docker compose exec moodle php /tmp/register_tool.php
 # note the printed clientid + wwwroot; put them into ../configs/tool.json
 docker cp create_test_fixtures.php $(docker compose ps -q moodle):/tmp/create_test_fixtures.php
 docker compose exec moodle php /tmp/create_test_fixtures.php
+docker cp finalize_deeplink_headless.php $(docker compose ps -q moodle):/tmp/finalize_deeplink_headless.php
 cd ..
 
 # 2. The tool itself
@@ -80,7 +81,8 @@ export SUPERDOCS_API_KEY=sk_...
 # 3. Verify a launch (separate venv, only needed for this headless verification)
 python3 -m venv moodle-dev/.venv && moodle-dev/.venv/bin/pip install requests beautifulsoup4
 moodle-dev/.venv/bin/python moodle-dev/verify_launch.py deep-link dpa
-# finalize via moodle-dev/finalize_deeplink_headless.php, note the printed cmid
+# it saves the deep-link response JWT and prints the two commands to finalize it into a
+# real course module - run those, then note the printed cmid
 moodle-dev/.venv/bin/python moodle-dev/verify_launch.py launch <cmid> student1
 # note the printed launch_id, then drive the review API directly:
 curl -X POST localhost:9001/api/review/<launch_id>/edit -H 'Content-Type: application/json' \
@@ -107,6 +109,24 @@ grades honesty over a clean-looking story.
   `fix_jwks_alg(): Argument #1 ($jwks) must be of type array, null given`, which names a
   PHP type error, not "port blocked." `register_tool.php` adds 9001 to
   `curlsecurityallowedport` for this local instance only.
+- **The same firewall separately blocks common private-network destination IPs by
+  default, and Docker Desktop's `host.docker.internal` resolves into exactly that range.**
+  With the port allowed, the JWKS fetch still silently returned nothing —
+  `download_file_content()` came back `false` with no exception and no log line naming the
+  host — because the resolved IP (`192.168.65.x` on this machine; it can differ per install
+  and can change after a Docker VM rebuild) sits inside the `192.168.0.0/16` block on
+  `curlsecurityblockedhosts`. `register_tool.php` clears that setting for this local
+  instance only.
+- **A Deep Linking content item that sets its own `url` gets bound to `typeid=0`
+  (a legacy ad-hoc-URL placement) instead of the registered LTI Advantage tool.** The
+  resulting course module then launches over LTI 1.1 "basic outcomes" with no AGS claim in
+  the id_token at all — no error, just a launch that later fails with
+  `pylti1p3.exception.LtiException: Missing state param` once the tool tries to treat it as
+  Advantage. Traced by decoding that launch's JWT and finding
+  `lti-bo/claim/basicoutcome` where `lti-ags/claim/endpoint` should have been. Fixed by not
+  calling `DeepLinkResource.set_url()` in `/configure/` at all (see the comment there) —
+  Moodle then falls back to the tool's own registered launch URL and binds `typeid` to the
+  real tool.
 - **Two different callers need two different hostnames for "the tool."** A browser
   resolving `host.docker.internal` fails outright (only containers can resolve it); Moodle's
   own PHP resolving `localhost` for a server-to-server call reaches itself, not the tool.

@@ -60,6 +60,15 @@ $config->ltiservice_gradesynchronization = 2; // gradebookservices::GRADEBOOKSER
 // never disable this on a real deployment.
 set_config('curlsecurityallowedport', "80\n443\n9001");
 
+// The same firewall also blocks-by-default any destination IP in common private-network
+// ranges (192.168.0.0/16 among them) - and Docker Desktop's host.docker.internal resolves
+// to a gateway IP inside exactly that range (192.168.65.x on this machine; it can differ
+// per install and can change after a Docker VM rebuild). With the port now allowed, the
+// symptom moves from a PHP type error to a silent `download_file_content()` returning
+// false - no exception, no log line naming the host as the reason. Local test instance
+// only - never disable this on a real deployment.
+set_config('curlsecurityblockedhosts', '');
+
 $id = lti_add_type($type, $config);
 $saved = $DB->get_record('lti_types', ['id' => $id]);
 echo "tool_id={$id}\n";

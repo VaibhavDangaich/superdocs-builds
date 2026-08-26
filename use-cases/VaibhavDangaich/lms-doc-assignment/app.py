@@ -21,7 +21,7 @@ from datetime import datetime, timezone
 from tempfile import mkdtemp
 
 import requests
-from flask import Flask, jsonify, redirect, render_template, request, url_for
+from flask import Flask, jsonify, render_template, request
 from flask_caching import Cache
 from pylti1p3.contrib.flask import (
     FlaskCacheDataStorage,
@@ -40,7 +40,10 @@ from documents.catalog import DOCUMENTS, get_document
 app = Flask(__name__, template_folder="templates")
 app.config.from_mapping(
     {
-        "DEBUG": True,
+        # Werkzeug's debugger is an unauthenticated eval console; this tool handles signed
+        # launch JWTs, so it stays off even in local dev. Flask's own reloader/tracebacks
+        # still work fine without it.
+        "DEBUG": False,
         "CACHE_TYPE": "simple",
         "CACHE_DEFAULT_TIMEOUT": 3600,
         "SECRET_KEY": os.environ.get("FLASK_SECRET_KEY", "dev-only-change-me"),
@@ -158,7 +161,15 @@ def configure(launch_id: str, doc_id: str):
         raise Forbidden(f"Unknown document id: {doc_id}")
 
     resource = DeepLinkResource()
-    resource.set_url(url_for("launch", _external=True))
+    # Deliberately no .set_url() here. A content item that carries its own url makes
+    # Moodle's content_item_to_form() bind the placement to typeid=0 (a legacy ad-hoc-URL
+    # launch), not this registered LTI Advantage tool - so the resulting course module
+    # launches over LTI 1.1 with no AGS claim at all, silently. Leaving url unset makes
+    # Moodle fall back to the tool's own registered launch URL (lti_toolurl in
+    # register_tool.php - the exact same http://localhost:9001/launch/), while binding
+    # typeid to this tool's real id. Found by tracing a launch that landed on
+    # "Missing state param" back through a decoded JWT that had lti-bo/claim/basicoutcome
+    # instead of an AGS claim.
     resource.set_custom_params({"doc_id": doc_id})
     resource.set_title(f"Review: {doc['title']}")
 

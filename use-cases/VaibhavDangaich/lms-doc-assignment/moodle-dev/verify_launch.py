@@ -21,6 +21,7 @@ app.py is running on :9001):
 from __future__ import annotations
 
 import json
+import pathlib
 import re
 import socket
 import sys
@@ -107,13 +108,26 @@ def run_deep_link(session: requests.Session, tool_id: int, course_id: int, doc_i
 
     r = session.post(f"{TOOL}/configure/{launch_id}/{doc_id}/")
     print("[tool /configure/] status", r.status_code)
+
+    # The deep-link response form (rendered by pylti1p3's DeepLink.output_response_form)
+    # carries the signed response as a hidden input named "JWT" - save it before following
+    # the auto-submit, since finalize_deeplink_headless.php needs this exact JWT (it's what
+    # a browser's cross-window JS handshake would have handed to Moodle's own "add
+    # activity" form - see that script's docstring).
+    jwt_soup = BeautifulSoup(r.text, "html.parser")
+    jwt_input = jwt_soup.find("input", {"name": "JWT"})
+    if jwt_input:
+        jwt_path = pathlib.Path(__file__).parent / "deeplink_jwt.txt"
+        jwt_path.write_text(jwt_input["value"])
+        print(f"deep-link response JWT saved to {jwt_path}")
+        print(
+            "Finalize it into a real course module (run from moodle-dev/):\n"
+            f"  docker cp {jwt_path} $(docker compose ps -q moodle):/tmp/deeplink_jwt.txt\n"
+            "  docker compose exec moodle php /tmp/finalize_deeplink_headless.php"
+        )
+
     r = follow_auto_submit(session, r.text, "deep-link response -> contentitem_return.php")
     print("[contentitem_return.php] status", r.status_code, r.url)
-    print(
-        "Deep-link response accepted by Moodle. It still needs finalizing into a real "
-        "course module - in a browser this happens via cross-window JS messaging with no "
-        "HTTP equivalent; see moodle-dev/finalize_deeplink_headless.php for the headless path."
-    )
     return r
 
 
